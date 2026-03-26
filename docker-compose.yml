@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # Redis - 消息代理
+  redis:
+    image: redis:7-alpine
+    container_name: novel-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # FastAPI 后端
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: novel-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=false
+    volumes:
+      - ./projects:/app/projects
+      - ./data:/app/data
+      - ./backend/.env:/app/.env
+    depends_on:
+      - redis
+    networks:
+      - novel-network
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: novel-celery-worker
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./projects:/app/projects
+      - ./data:/app/data
+      - ./backend/.env:/app/.env
+    depends_on:
+      - redis
+      - backend
+    networks:
+      - novel-network
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+
+  # Celery Beat (定时任务，可选)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: novel-celery-beat
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend/.env:/app/.env
+    depends_on:
+      - redis
+    networks:
+      - novel-network
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    profiles:
+      - scheduled-tasks
+
+  # Vue 前端 (生产环境)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: novel-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - novel-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+networks:
+  novel-network:
+    driver: bridge
+
+volumes:
+  redis_data:

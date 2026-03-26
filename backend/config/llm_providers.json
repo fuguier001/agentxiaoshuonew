@@ -1,0 +1,31 @@
+{
+  "default_provider": "eggfans",
+  "providers": {
+    "eggfans": {
+      "api_format": "openai",
+      "api_key": "sk-7Pp8IuAfbbfuraTcnjOI6Nn3wwn4UvvALYNcqEjQPJhV7cfR",
+      "base_url": "https://eggfans.com",
+      "endpoint": "/v1/chat/completions",
+      "model": "deepseek-v3.2",
+      "timeout": 60,
+      "enabled": true,
+      "auth_type": "bearer"
+    },
+    "volcengine": {
+      "api_format": "openai",
+      "api_key": "",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "model": "",
+      "timeout": 60,
+      "enabled": true
+    },
+    "aliyun": {
+      "api_format": "aliyun",
+      "api_key": "",
+      "base_url": "https://dashscope.aliyuncs.com/api/v1",
+      "model": "",
+      "timeout": 60,
+      "enabled": true
+    }
+  }
+}

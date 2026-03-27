@@ -27,6 +27,10 @@
               <el-icon><FolderOpened /></el-icon>
               <span>小说仓库</span>
             </el-menu-item>
+            <el-menu-item index="trash">
+              <el-icon><Delete /></el-icon>
+              <span>回收站</span>
+            </el-menu-item>
             <el-menu-item index="config">
               <el-icon><Setting /></el-icon>
               <span>项目配置</span>
@@ -61,7 +65,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { HomeFilled, MagicStick, Setting, Monitor, Edit, Reading, Grid, FolderOpened } from '@element-plus/icons-vue'
+import { HomeFilled, MagicStick, Setting, Monitor, Edit, Reading, Grid, FolderOpened, Delete } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

@@ -65,50 +65,13 @@
     <el-row :gutter="20" v-if="selectedNovelId">
       <!-- 左侧：章节列表 -->
       <el-col :span="6">
-        <el-card class="chapters-card">
-          <template #header>
-            <div class="card-header">
-              <span>章节列表</span>
-              <el-button type="primary" size="small" @click="createNewChapter">新建</el-button>
-            </div>
-          </template>
-          
-          <el-input
-            v-model="chapterSearch"
-            placeholder="搜索章节..."
-            size="small"
-            clearable
-            style="margin-bottom: 10px"
-          />
-          
-          <el-menu
-            :default-active="String(currentChapterNum)"
-            @select="handleChapterSelect"
-          >
-            <el-menu-item
-              v-for="chapter in filteredChapters"
-              :key="chapter.num"
-              :index="String(chapter.num)"
-            >
-              <el-tag 
-                size="small" 
-                :type="chapter.status === 'published' ? 'success' : 'warning'"
-                style="margin-right: 8px"
-              >
-                {{ chapter.status === 'published' ? '已发布' : '草稿' }}
-              </el-tag>
-              <span>第{{ chapter.num }}章</span>
-              <div class="chapter-title">{{ chapter.title }}</div>
-              <div class="chapter-meta">
-                <span>{{ chapter.wordCount }}字</span>
-                <span v-if="chapter.updatedAt">{{ formatDate(chapter.updatedAt) }}</span>
-              </div>
-            </el-menu-item>
-          </el-menu>
-          
-          <el-empty v-if="filteredChapters.length === 0" description="暂无章节" />
-        </el-card>
-        
+        <ChapterList
+          :chapters="chapters"
+          :active-chapter="currentChapterNum"
+          @select="handleChapterSelect"
+          @create="createNewChapter"
+        />
+
         <!-- 统计信息 -->
         <el-card class="stats-card" style="margin-top: 20px">
           <template #header>统计信息</template>
@@ -253,15 +216,7 @@
       <!-- 右侧：辅助面板 -->
       <el-col :span="6">
         <!-- Agent 状态 -->
-        <el-card class="agent-status-card">
-          <template #header>Agent 状态</template>
-          <div class="agent-item" v-for="agent in agentStatus" :key="agent.name">
-            <el-tag size="small" :type="agent.status === 'idle' ? 'success' : 'warning'">
-              {{ agent.status === 'idle' ? '空闲' : '工作中' }}
-            </el-tag>
-            <span>{{ agent.name }}</span>
-          </div>
-        </el-card>
+        <AgentStatusCard :agents="agentStatus" />
         
         <!-- 人物提示 -->
         <el-card class="characters-card" style="margin-top: 20px">
@@ -460,6 +415,8 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 import { apiClient } from '@/api/client'
+import ChapterList from '@/components/ChapterList.vue'
+import AgentStatusCard from '@/components/AgentStatusCard.vue'
 
 // ========== 小说管理 ==========
 const selectedNovelId = ref('')
@@ -480,7 +437,6 @@ const novelSettings = reactive({
 
 // ========== 章节管理 ==========
 const chapters = ref([])
-const chapterSearch = ref('')
 const currentChapterNum = ref(1)
 const chapterTitle = ref('')
 const chapterOutline = ref('')
@@ -523,15 +479,6 @@ const versionVisible = ref(false)
 const versions = ref([])
 
 // ========== 计算属性 ==========
-const filteredChapters = computed(() => {
-  if (!chapterSearch.value) return chapters.value
-  const query = chapterSearch.value.toLowerCase()
-  return chapters.value.filter(ch => 
-    ch.title.toLowerCase().includes(query) ||
-    String(ch.num).includes(query)
-  )
-})
-
 const currentWordCount = computed(() => chapterContent.value.length)
 
 const totalChapters = computed(() => chapters.value.length)
@@ -1095,23 +1042,6 @@ onMounted(() => {
   align-items: center;
 }
 
-.chapter-title {
-  font-size: 12px;
-  color: #666;
-  margin-top: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chapter-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: #999;
-  margin-top: 4px;
-}
-
 .outline-section, .content-section {
   margin-bottom: 15px;
 }
@@ -1151,14 +1081,6 @@ onMounted(() => {
 
 .style-preview {
   margin-top: 10px;
-}
-
-.agent-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 13px;
 }
 
 .hook-item {
@@ -1204,7 +1126,7 @@ onMounted(() => {
   line-height: 1.8;
 }
 
-.stats-card, .agent-status-card, .characters-card, .hooks-card, .token-stats-card, .log-card {
+.stats-card, .characters-card, .hooks-card, .token-stats-card, .log-card {
   font-size: 13px;
 }
 </style>

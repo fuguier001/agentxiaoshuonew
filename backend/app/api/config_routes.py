@@ -51,6 +51,12 @@ async def test_llm_connection(data: Dict[str, Any]):
         api_key = provider_config.get("api_key", "")
         model = provider_config.get("model", "")
         timeout = provider_config.get("timeout", 60)
+        # 使用配置中的 endpoint，如果没有则默认使用 /v1/chat/completions
+        endpoint = provider_config.get("endpoint", "/v1/chat/completions")
+        if not endpoint:
+            endpoint = "/v1/chat/completions"
+
+        logger.info(f"测试连接 - provider: {provider}, base_url: {base_url}, endpoint: {endpoint}")
 
         payload = {
             "model": model,
@@ -67,7 +73,7 @@ async def test_llm_connection(data: Dict[str, Any]):
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
-                f"{base_url}/v1/chat/completions",
+                f"{base_url}{endpoint}",
                 headers=headers,
                 json=payload,
             )

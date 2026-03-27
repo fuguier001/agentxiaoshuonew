@@ -90,9 +90,15 @@ class ConfigService:
 
     def validate_provider_payload(self, provider_name: str, payload: dict) -> dict:
         errors = []
-        if payload.get("enabled", True):
-            if not payload.get("clear_api_key") and not (payload.get("api_key") or payload.get("has_api_key")):
-                errors.append("API Key 不能为空")
+        # 只验证有 API Key 的提供商（正在配置的）
+        has_key = payload.get("api_key") or payload.get("has_api_key")
+        is_clearing = payload.get("clear_api_key")
+
+        # 如果没有 API Key 且不是在清除，跳过验证（未配置的提供商）
+        if not has_key and not is_clearing:
+            return {"valid": True, "message": "跳过未配置的提供商"}
+
+        if payload.get("enabled", True) and has_key:
             if not payload.get("base_url", "").startswith(("http://", "https://")):
                 errors.append("Base URL 格式不正确")
             if not payload.get("model"):

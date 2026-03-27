@@ -8,6 +8,7 @@ from datetime import datetime
 import logging
 import httpx
 import json
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -371,17 +372,18 @@ class LearningAgent:
         """调用 LLM API"""
         if not self.llm_client:
             raise Exception("LLM 未配置")
-        
+
         api_key = self.llm_client['api_key']
         base_url = self.llm_client['base_url']
+        endpoint = self.llm_client.get('endpoint', '/v1/chat/completions')
         model = self.llm_client['model']
         timeout = self.llm_client.get('timeout', 300)
-        
+
         headers = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
         }
-        
+
         payload = {
             'model': model,
             'messages': [
@@ -391,12 +393,12 @@ class LearningAgent:
             'max_tokens': max_tokens,
             'temperature': 0.7
         }
-        
+
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     response = await client.post(
-                        f"{base_url}/v1/chat/completions",
+                        f"{base_url}{endpoint}",
                         headers=headers,
                         json=payload
                     )

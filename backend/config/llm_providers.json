@@ -1,6 +1,18 @@
 {
-  "default_provider": "eggfans",
+  "default_provider": "bigmodel",
   "providers": {
+    "bigmodel": {
+      "api_format": "openai",
+      "api_key": "42d60d6b641a4d9191a589b54dece067.Titv6eNPU55YYkUl",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "endpoint": "/chat/completions",
+      "model": "GLM-5-Turbo",
+      "timeout": 600,
+      "use_stream": true,
+      "enabled": true,
+      "auth_type": "bearer",
+      "auth_header": "Authorization"
+    },
     "eggfans": {
       "api_format": "openai",
       "api_key": "sk-7Pp8IuAfbbfuraTcnjOI6Nn3wwn4UvvALYNcqEjQPJhV7cfR",

@@ -142,8 +142,21 @@ const apiStatus = ref('检查中...')
 const lastUpdated = ref('')
 
 const config = reactive({
-  default_provider: 'eggfans',  // 默认使用 eggfans
+  default_provider: 'bigmodel',  // 默认使用 bigmodel (智谱 AI)
   providers: {
+    bigmodel: {
+      api_format: 'openai',
+      api_key: '',
+      has_api_key: false,
+      masked_api_key: '',
+      clear_api_key: false,
+      base_url: 'https://open.bigmodel.cn/api/paas/v4',
+      endpoint: '/chat/completions',
+      model: 'GLM-5-Turbo',
+      timeout: 300,
+      enabled: true,
+      auth_type: 'bearer'
+    },
     eggfans: {
       api_format: 'openai',
       api_key: '',
@@ -192,9 +205,10 @@ const projectSettings = reactive({
 const testResults = ref({})
 
 const providers = [
+  { name: 'bigmodel', label: '智谱 AI (GLM)' },
+  { name: 'eggfans', label: 'EggFans' },
   { name: 'volcengine', label: '火山引擎' },
-  { name: 'aliyun', label: '阿里云' },
-  { name: 'eggfans', label: 'EggFans' }
+  { name: 'aliyun', label: '阿里云' }
 ]
 
 const loadConfig = async () => {

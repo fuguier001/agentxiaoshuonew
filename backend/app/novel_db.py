@@ -112,7 +112,14 @@ class NovelDatabase:
                 FOREIGN KEY (novel_id) REFERENCES novels(id)
             )
         ''')
-        
+
+        # 迁移：添加 deleted_at 列（如果不存在）
+        try:
+            cursor.execute("SELECT deleted_at FROM novels LIMIT 1")
+        except sqlite3.OperationalError:
+            cursor.execute("ALTER TABLE novels ADD COLUMN deleted_at TIMESTAMP DEFAULT NULL")
+            logger.info("已添加 deleted_at 列到 novels 表")
+
         conn.commit()
         conn.close()
         logger.info(f"小说数据库初始化完成：{self.db_path}")
@@ -125,21 +132,31 @@ class NovelDatabase:
     
     # ========== 小说管理 ==========
     
-    def create_novel(self, title: str, genre: str = 'fantasy', description: str = '', 
+    def create_novel(self, title: str, genre: str = 'fantasy', description: str = '',
                      author: str = 'AI Author') -> str:
         """创建新小说"""
         import uuid
         novel_id = f"novel_{uuid.uuid4().hex[:8]}"
-        
+
+        # 初始化蓝图设置
+        initial_settings = {
+            "world_map": {},
+            "macro_plot": {},
+            "character_system": {},
+            "hook_network": {},
+            "chapter_count": 0,
+            "blueprint_created_at": None
+        }
+
         conn = self._get_connection()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute('''
-                INSERT INTO novels (id, title, genre, description, author)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (novel_id, title, genre, description, author))
-            
+                INSERT INTO novels (id, title, genre, description, author, settings)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (novel_id, title, genre, description, author, json.dumps(initial_settings, ensure_ascii=False)))
+
             conn.commit()
             logger.info(f"创建新小说：{novel_id} - {title}")
             return novel_id
@@ -166,16 +183,35 @@ class NovelDatabase:
             conn.close()
     
     def get_all_novels(self) -> List[Dict[str, Any]]:
-        """获取所有小说"""
+        """获取所有小说（包括回收站）"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute('SELECT * FROM novels ORDER BY updated_at DESC')
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"获取所有小说失败：{e}")
+            return []
+        finally:
+            conn.close()
+
+    def list_novels(self) -> List[Dict[str, Any]]:
+        """获取小说列表（不包括回收站）"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                SELECT * FROM novels
+                WHERE deleted_at IS NULL
+                ORDER BY updated_at DESC
+            ''')
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"获取小说列表失败：{e}")
             return []
         finally:
             conn.close()
@@ -213,7 +249,157 @@ class NovelDatabase:
             return False
         finally:
             conn.close()
-    
+
+    def update_novel_settings(self, novel_id: str, settings: Dict[str, Any]) -> bool:
+        """更新小说的蓝图设置（世界观、大纲、人物等）"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # 先获取现有设置
+            cursor.execute("SELECT settings FROM novels WHERE id = ?", (novel_id,))
+            row = cursor.fetchone()
+            existing_settings = json.loads(row[0]) if row and row[0] else {}
+
+            # 合并新设置
+            existing_settings.update(settings)
+
+            # 保存
+            cursor.execute('''
+                UPDATE novels
+                SET settings = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (json.dumps(existing_settings, ensure_ascii=False), novel_id))
+
+            conn.commit()
+            logger.info(f"更新小说蓝图设置：{novel_id}")
+            return True
+        except Exception as e:
+            logger.error(f"更新小说蓝图设置失败：{e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_novel_settings(self, novel_id: str) -> Dict[str, Any]:
+        """获取小说的蓝图设置"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("SELECT settings FROM novels WHERE id = ?", (novel_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+            return {}
+        except Exception as e:
+            logger.error(f"获取小说蓝图设置失败：{e}")
+            return {}
+        finally:
+            conn.close()
+
+    def soft_delete_novel(self, novel_id: str) -> bool:
+        """软删除小说（移动到回收站）"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                UPDATE novels
+                SET deleted_at = CURRENT_TIMESTAMP, status = 'deleted'
+                WHERE id = ? AND deleted_at IS NULL
+            ''', (novel_id,))
+
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"软删除小说：{novel_id}，已移动到回收站")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"软删除小说失败：{e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_trash_novels(self) -> List[Dict[str, Any]]:
+        """获取回收站小说列表"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                SELECT id, title, genre, description, author,
+                       total_chapters, total_words, deleted_at, created_at
+                FROM novels
+                WHERE deleted_at IS NOT NULL
+                ORDER BY deleted_at DESC
+            ''')
+
+            novels = []
+            for row in cursor.fetchall():
+                novels.append({
+                    'id': row[0],
+                    'title': row[1],
+                    'genre': row[2],
+                    'description': row[3],
+                    'author': row[4],
+                    'total_chapters': row[5],
+                    'total_words': row[6],
+                    'deleted_at': row[7],
+                    'created_at': row[8]
+                })
+            return novels
+        finally:
+            conn.close()
+
+    def restore_novel(self, novel_id: str) -> bool:
+        """从回收站恢复小说"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute('''
+                UPDATE novels
+                SET deleted_at = NULL, status = 'ongoing'
+                WHERE id = ? AND deleted_at IS NOT NULL
+            ''', (novel_id,))
+
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"恢复小说：{novel_id}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"恢复小说失败：{e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def permanent_delete_novel(self, novel_id: str) -> bool:
+        """永久删除小说（从数据库彻底删除）"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # 删除所有相关数据
+            cursor.execute('DELETE FROM chapters WHERE novel_id = ?', (novel_id,))
+            cursor.execute('DELETE FROM characters WHERE novel_id = ?', (novel_id,))
+            cursor.execute('DELETE FROM plot_hooks WHERE novel_id = ?', (novel_id,))
+            cursor.execute('DELETE FROM style_fusions WHERE novel_id = ?', (novel_id,))
+            cursor.execute('DELETE FROM novels WHERE id = ?', (novel_id,))
+
+            conn.commit()
+            logger.info(f"永久删除小说：{novel_id}")
+            return True
+        except Exception as e:
+            logger.error(f"永久删除小说失败：{e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
     def delete_novel(self, novel_id: str) -> bool:
         """删除小说"""
         conn = self._get_connection()

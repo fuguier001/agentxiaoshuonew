@@ -163,11 +163,175 @@ style_id: {metadata.get('style_id', 'default')}
             return str(filepath)
         
         elif format == 'epub':
-            # TODO: EPUB 导出
-            raise NotImplementedError("EPUB 导出暂未实现")
+            return await self.export_to_epub()
         
         else:
             raise ValueError(f"不支持的导出格式：{format}")
+
+    async def export_to_epub(
+        self,
+        title: str = "未命名小说",
+        author: str = "AI 创作",
+        language: str = "zh-CN"
+    ) -> str:
+        """
+        导出小说为 EPUB 格式
+
+        Args:
+            title: 小说标题
+            author: 作者名称
+            language: 语言代码
+
+        Returns:
+            导出文件路径
+        """
+        try:
+            from ebooklib import epub
+        except ImportError:
+            logger.error("ebooklib 未安装，无法导出 EPUB")
+            raise ImportError("请先安装 ebooklib: pip install ebooklib>=0.18")
+
+        exports_dir = self.project_path / "exports"
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe_title = self._safe_filename(title)
+        filepath = exports_dir / f"{safe_title}_{timestamp}.epub"
+
+        # 创建 EPUB 书籍
+        book = epub.EpubBook()
+
+        # 设置元数据
+        book.set_identifier(f"novel-{timestamp}")
+        book.set_title(title)
+        book.set_language(language)
+        book.add_author(author)
+
+        # 收集所有章节
+        chapters_dir = self.project_path / "chapters"
+        chapter_files = sorted(chapters_dir.glob("ch*.md"))
+
+        if not chapter_files:
+            raise ValueError("没有找到任何章节文件，无法导出")
+
+        epub_chapters = []
+        toc_links = []
+
+        for idx, file in enumerate(chapter_files, start=1):
+            with open(file, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # 解析章节信息
+            chapter_info = self._parse_chapter_content(content, idx)
+
+            # 创建 EPUB 章节
+            chapter_filename = f"chapter_{idx:04d}.xhtml"
+            epub_chapter = epub.EpubHtml(
+                title=chapter_info['title'],
+                file_name=chapter_filename,
+                lang=language
+            )
+
+            # 设置章节内容
+            epub_chapter.content = f"""
+            <html>
+            <head><title>{chapter_info['title']}</title></head>
+            <body>
+                <h1>{chapter_info['title']}</h1>
+                {self._markdown_to_html(chapter_info['content'])}
+            </body>
+            </html>
+            """
+
+            book.add_item(epub_chapter)
+            epub_chapters.append(epub_chapter)
+            toc_links.append(epub_chapter)
+
+        # 添加目录
+        book.toc = tuple(toc_links)
+
+        # 添加导航文件
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+
+        # 设置样式
+        style = '''
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.8;
+            margin: 1em;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 0.5em;
+        }
+        p {
+            text-indent: 2em;
+            margin: 0.5em 0;
+        }
+        '''
+        nav_css = epub.EpubItem(
+            uid="style_nav",
+            file_name="style/nav.css",
+            media_type="text/css",
+            content=style
+        )
+        book.add_item(nav_css)
+
+        # 设置 spine
+        book.spine = ['nav'] + epub_chapters
+
+        # 写入文件
+        epub.write_epub(str(filepath), book, {})
+
+        logger.info(f"EPUB 已导出：{filepath}")
+        return str(filepath)
+
+    def _parse_chapter_content(self, content: str, chapter_num: int) -> Dict[str, Any]:
+        """解析章节内容，提取标题和正文"""
+        lines = content.split('\n')
+        title = f"第{chapter_num}章"
+        body_lines = []
+        in_frontmatter = False
+
+        for line in lines:
+            # 跳过 YAML frontmatter
+            if line.strip() == '---':
+                in_frontmatter = not in_frontmatter
+                continue
+            if in_frontmatter:
+                continue
+
+            # 提取标题
+            if line.startswith('# ') and title == f"第{chapter_num}章":
+                title = line[2:].strip()
+                continue
+
+            # 跳过元数据部分
+            if line.startswith('---') or line.startswith('**'):
+                continue
+
+            body_lines.append(line)
+
+        return {
+            'title': title,
+            'content': '\n'.join(body_lines).strip()
+        }
+
+    def _markdown_to_html(self, markdown_text: str) -> str:
+        """简单的 Markdown 转 HTML"""
+        html = markdown_text
+
+        # 段落处理
+        paragraphs = html.split('\n\n')
+        html_paragraphs = []
+        for p in paragraphs:
+            p = p.strip()
+            if p:
+                # 处理单行换行
+                p = p.replace('\n', '<br/>')
+                html_paragraphs.append(f'<p>{p}</p>')
+
+        return '\n'.join(html_paragraphs)
     
     def get_project_stats(self) -> Dict[str, Any]:
         """获取项目统计"""

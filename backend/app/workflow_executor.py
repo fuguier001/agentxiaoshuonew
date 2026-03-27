@@ -38,11 +38,13 @@ class WritingWorkflowExecutor:
                 self.llm_client = {
                     'api_key': provider_config['api_key'],
                     'base_url': provider_config['base_url'],
+                    'endpoint': provider_config.get('endpoint', '/v1/chat/completions'),
                     'model': provider_config['model'],
                     'timeout': provider_config.get('timeout', 300)
                 }
                 logger.info(f"[OK] LLM 配置加载成功：{provider_config['name']}")
                 logger.info(f"   Base URL: {provider_config['base_url']}")
+                logger.info(f"   Endpoint: {provider_config.get('endpoint', '/v1/chat/completions')}")
             else:
                 logger.warning("[FAIL] LLM 配置不完整或未配置默认提供商")
                 self.runtime_provider = None
@@ -89,10 +91,76 @@ class WritingWorkflowExecutor:
     
     async def _write_draft_smart(self, outline: str, character_notes: str, word_count_target: int,
                                   style: str, prev_chapters: List[Dict], macro_plot: Optional[Dict],
-                                  world_map: Optional[Dict], protagonist_halo: Optional[Dict]) -> str:
-        """智能撰写初稿"""
-        # 简化实现：直接调用基础方法
-        return await self._write_draft(outline, character_notes, word_count_target, style)
+                                  world_map: Optional[Dict], protagonist_halo: Optional[Dict],
+                                  chapter_num: int = 1, novel_title: str = "小说") -> str:
+        """智能撰写初稿 - 使用专业创作模板"""
+        from app.professional_prompts import get_chapter_creation_prompt
+
+        # 确定章节位置和节奏
+        volume_info = "第一卷"
+        arc_info = "开篇"
+        rhythm_position = "铺垫→发展→高潮→结尾"
+
+        if macro_plot and 'volumes' in macro_plot:
+            for vol in macro_plot['volumes']:
+                chapters_range = vol.get('chapters', '1-100')
+                if '-' in chapters_range:
+                    start, end = map(int, chapters_range.split('-'))
+                    if start <= chapter_num <= end:
+                        volume_info = vol.get('volume_title', volume_info)
+                        arc_info = vol.get('arc_name', arc_info)
+                        break
+
+        # 前章摘要
+        previous_chapter_summary = "这是第一章，无前章"
+        if prev_chapters:
+            last_chapter = prev_chapters[-1]
+            previous_chapter_summary = f"第{last_chapter['chapter_num']}章：{last_chapter.get('title', '无标题')} - {last_chapter.get('content', '')[:200]}..."
+
+        # 爽点设计
+        shuangdian_design = """
+- 小爽点：至少 2 个（打脸/装逼/收获/美人/升级）
+- 中爽点：至少 1 个（震惊效果/实力展示）
+- 大爽点：本章核心爽点 1 个
+"""
+
+        # 第一章特殊要求：黄金3秒
+        if chapter_num == 1:
+            shuangdian_design += """
+**【第一章特别要求 - 黄金3秒】**
+- 开篇前 100 字必须抓住读者
+- 必须在 3 秒内引发读者好奇
+- 建议用：悬念/冲突/反差/奇异场景开头
+- 禁止：无聊的背景介绍开头
+"""
+
+        # 场景设定
+        scene_setting = "根据大纲设定"
+        if world_map:
+            scene_setting = f"世界观：{world_map.get('world_name', '未知世界')}"
+            if world_map.get('geography'):
+                continents = world_map['geography'].get('continents', [])
+                if continents:
+                    scene_setting += f"，主要舞台：{continents[0].get('name', '未知')}"
+
+        # 使用专业模板
+        prompt = get_chapter_creation_prompt(
+            novel_title=novel_title,
+            chapter_num=chapter_num,
+            chapter_title="待定",
+            volume_info=volume_info,
+            arc_info=arc_info,
+            rhythm_position=rhythm_position,
+            previous_chapter_summary=previous_chapter_summary,
+            chapter_event=outline,
+            shuangdian_design=shuangdian_design,
+            characters=character_notes,
+            scene_setting=scene_setting,
+            word_count_target=word_count_target
+        )
+
+        # 生成章节需要足够的 tokens（中文约 1.5 字/token）
+        return await self._call_llm(prompt, max_tokens=int(word_count_target * 0.8))
     
     async def _consistency_check_smart(self, content: str, novel_id: str, prev_chapters: List[Dict],
                                         world_map: Optional[Dict], protagonist_halo: Optional[Dict]) -> Dict[str, Any]:
@@ -201,17 +269,25 @@ class WritingWorkflowExecutor:
                 raise
             
             # Step 3: 撰写初稿（参考前 3 章 + 大纲 + 世界观 + 主角光环）- 关键步骤
-            logger.info(f"Step 3/6: 章节写手 - 撰写初稿")
+            logger.info(f"Step 3/6: 章节写手 - 撰写初稿（使用专业创作模板）")
             try:
+                # 获取小说标题
+                from app.novel_db import get_novel_database
+                db = get_novel_database()
+                novel_info = db.get_novel(novel_id)
+                novel_title = novel_info.get('title', '小说') if novel_info else '小说'
+
                 draft_content = await self._write_draft_smart(
-                    refined_outline, 
-                    character_notes, 
+                    refined_outline,
+                    character_notes,
                     word_count_target,
                     style,
                     prev_chapters,
                     macro_plot,
                     world_map,
-                    protagonist_halo
+                    protagonist_halo,
+                    chapter_num=chapter_num,
+                    novel_title=novel_title
                 )
                 # 严格验证初稿内容
                 if not draft_content or len(draft_content) < 500:
@@ -334,31 +410,62 @@ class WritingWorkflowExecutor:
             raise
     
     async def _write_draft(
-        self, 
-        outline: str, 
-        character_notes: str, 
+        self,
+        outline: str,
+        character_notes: str,
         word_count_target: int,
-        style: str
+        style: str,
+        chapter_num: int = 1,
+        novel_title: str = "小说"
     ) -> str:
-        """章节写手：撰写初稿"""
-        prompt = f"""你是一位专业的小说写手。请根据以下材料撰写章节正文：
+        """章节写手：撰写初稿 - 使用专业创作模板"""
+        from app.professional_prompts import get_chapter_creation_prompt
 
-【本章大纲】
-{outline}
+        # 构建爽点设计
+        shuangdian_design = """
+- 小爽点：至少 2 个（打脸/装逼/收获/美人/升级）
+- 中爽点：至少 1 个（震惊效果/实力展示）
+- 大爽点：本章核心爽点 1 个
+"""
 
-【角色准备】
-{character_notes}
+        # 第一章特殊要求：黄金3秒
+        if chapter_num == 1:
+            shuangdian_design += """
 
-【要求】
-1. 字数目标：约{word_count_target}字
-2. 使用第三人称叙述
-3. 包含动作、对话、心理描写
-4. 保持节奏紧凑
-5. 展现人物性格
+**【第一章特别要求 - 黄金3秒】**
+- 开篇前 100 字必须抓住读者眼球
+- 必须在 3 秒内引发读者强烈好奇
+- 建议用：悬念/冲突/反差/奇异场景/死亡威胁开头
+- 禁止：无聊的背景介绍、风景描写、天气描述开头
+"""
 
-请开始创作："""
-        
-        return await self._call_llm(prompt, max_tokens=word_count_target // 2)
+        # 每章结尾钩子要求
+        shuangdian_design += """
+
+**【结尾钩子要求 - 必须执行】**
+- 结尾必须有钩子（悬念/反转/危机/期待）
+- 让读者迫不及待想看下一章
+- 禁止：平淡收尾、完整结束、毫无悬念
+"""
+
+        # 使用专业模板
+        prompt = get_chapter_creation_prompt(
+            novel_title=novel_title,
+            chapter_num=chapter_num,
+            chapter_title="待定",
+            volume_info="第一卷",
+            arc_info="开篇",
+            rhythm_position="铺垫→发展→高潮→结尾",
+            previous_chapter_summary="这是第一章，无前章" if chapter_num == 1 else "参考前章",
+            chapter_event=outline,
+            shuangdian_design=shuangdian_design,
+            characters=character_notes,
+            scene_setting="根据大纲设定",
+            word_count_target=word_count_target
+        )
+
+        # 生成 3000 字章节需要足够的 tokens（中文约 1.5 字/token）
+        return await self._call_llm(prompt, max_tokens=int(word_count_target * 0.8))
     
     async def _polish_dialogue(self, content: str) -> str:
         """对话专家：打磨对话"""
@@ -638,56 +745,67 @@ class WritingWorkflowExecutor:
         # 无需优化或优化失败，返回原内容
         return content
     
-    async def _call_llm(self, prompt: str, max_tokens: int = 2000) -> str:
-        """调用 LLM API"""
+    async def _call_llm(self, prompt: str, max_tokens: int = 2000, use_stream: bool = None) -> str:
+        """调用 LLM API - 支持流式响应"""
         if not self.llm_client:
             raise Exception("LLM 未配置")
-        
+
         api_key = self.llm_client['api_key']
         base_url = self.llm_client['base_url']
         model = self.llm_client['model']
-        timeout = self.llm_client.get('timeout', 300)
-        
+        timeout = self.llm_client.get('timeout', 600)  # 默认 10 分钟
+
+        # 从配置读取是否使用流式响应（默认 True，本地 LLM 可设为 False）
+        if use_stream is None:
+            use_stream = self.llm_client.get('use_stream', True)
+
         headers = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
         }
-        
+
         payload = {
             'model': model,
             'messages': [
                 {'role': 'user', 'content': prompt}
             ],
             'max_tokens': max_tokens,
-            'temperature': 0.7
+            'temperature': 0.7,
+            'stream': use_stream  # 启用流式响应
         }
-        
+
         # 重试机制：最多重试 3 次
         for attempt in range(3):
             try:
-                logger.info(f"LLM API 调用中... (尝试 {attempt+1}/3)")
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    endpoint = self.llm_client.get("endpoint", "/v1/chat/completions")
-                    response = await client.post(
-                        f"{base_url}{endpoint}",
-                        headers=headers,
-                        json=payload
-                    )
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        content = data['choices'][0]['message']['content']
-                        logger.info(f"LLM API 调用成功，返回长度：{len(content)}")
-                        return content
-                    else:
-                        error_msg = f"LLM API 调用失败：{response.status_code} - {response.text[:200]}"
-                        logger.error(error_msg)
-                        if attempt < 2:
-                            logger.info(f"等待 5 秒后重试...")
-                            import asyncio
-                            await asyncio.sleep(5)
+                logger.info(f"LLM API 调用中... (尝试 {attempt+1}/3, 流式: {use_stream})")
+
+                if use_stream:
+                    # 流式响应模式 - 避免长时间等待断开
+                    return await self._call_llm_stream(base_url, headers, payload, timeout)
+                else:
+                    # 非流式模式（备用）
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        endpoint = self.llm_client.get("endpoint", "/v1/chat/completions")
+                        response = await client.post(
+                            f"{base_url}{endpoint}",
+                            headers=headers,
+                            json={**payload, 'stream': False}
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            content = data['choices'][0]['message']['content']
+                            logger.info(f"LLM API 调用成功，返回长度：{len(content)}")
+                            return content
                         else:
-                            raise Exception(error_msg)
+                            error_msg = f"LLM API 调用失败：{response.status_code} - {response.text[:200]}"
+                            logger.error(error_msg)
+                            if attempt < 2:
+                                logger.info(f"等待 5 秒后重试...")
+                                import asyncio
+                                await asyncio.sleep(5)
+                            else:
+                                raise Exception(error_msg)
             except httpx.ReadError as e:
                 logger.error(f"网络读取错误（尝试 {attempt+1}/3）: {e}")
                 if attempt < 2:
@@ -704,8 +822,52 @@ class WritingWorkflowExecutor:
                     await asyncio.sleep(5)
                 else:
                     raise
-        
+
         raise Exception("LLM 调用失败，已达最大重试次数")
+
+    async def _call_llm_stream(self, base_url: str, headers: Dict, payload: Dict, timeout: int) -> str:
+        """流式调用 LLM API - 避免超时断开"""
+        import asyncio
+
+        endpoint = self.llm_client.get("endpoint", "/v1/chat/completions")
+        full_content = []
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{base_url}{endpoint}",
+                headers=headers,
+                json=payload
+            ) as response:
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    raise Exception(f"LLM API 调用失败：{response.status_code} - {error_text[:200]}")
+
+                logger.info("流式响应开始接收...")
+                chunk_count = 0
+
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # 去掉 "data: " 前缀
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            import json
+                            data = json.loads(data_str)
+                            if 'choices' in data and len(data['choices']) > 0:
+                                delta = data['choices'][0].get('delta', {})
+                                content_chunk = delta.get('content', '')
+                                if content_chunk:
+                                    full_content.append(content_chunk)
+                                    chunk_count += 1
+                                    if chunk_count % 50 == 0:
+                                        logger.info(f"已接收 {chunk_count} 个数据块，累计 {len(''.join(full_content))} 字符")
+                        except json.JSONDecodeError:
+                            continue  # 跳过无效 JSON
+
+        result = ''.join(full_content)
+        logger.info(f"流式响应完成，总长度：{len(result)}")
+        return result
     
     def _extract_json(self, text: str) -> Dict[str, Any]:
         """从文本中提取 JSON"""

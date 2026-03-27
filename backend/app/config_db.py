@@ -47,6 +47,7 @@ class ConfigDatabase:
                 auth_header TEXT,
                 headers TEXT DEFAULT '{}',
                 timeout INTEGER DEFAULT 60,
+                use_stream INTEGER DEFAULT 1,
                 response_format TEXT DEFAULT 'openai',
                 response_path TEXT,
                 enabled INTEGER DEFAULT 1,
@@ -122,6 +123,7 @@ class ConfigDatabase:
             data['headers'] = {}
 
         data['enabled'] = bool(data.get('enabled', 1))
+        data['use_stream'] = bool(data.get('use_stream', 1))
         return data
 
     def _save_provider_with_cursor(self, cursor, name: str, config: Dict[str, Any]):
@@ -140,6 +142,7 @@ class ConfigDatabase:
                         auth_header = ?,
                         headers = ?,
                         timeout = ?,
+                        use_stream = ?,
                         response_format = ?,
                         response_path = ?,
                         enabled = ?,
@@ -157,6 +160,7 @@ class ConfigDatabase:
                     config.get('auth_header'),
                     json.dumps(config.get('headers', {})),
                     config.get('timeout', 60),
+                    1 if config.get('use_stream', True) else 0,
                     config.get('response_format', 'openai'),
                     config.get('response_path'),
                     1 if config.get('enabled', True) else 0,
@@ -167,11 +171,11 @@ class ConfigDatabase:
         else:
             cursor.execute(
                 '''
-                    INSERT INTO llm_providers 
-                    (name, api_format, api_key, base_url, endpoint, model, 
-                     auth_type, auth_header, headers, timeout, response_format, 
+                    INSERT INTO llm_providers
+                    (name, api_format, api_key, base_url, endpoint, model,
+                     auth_type, auth_header, headers, timeout, use_stream, response_format,
                      response_path, enabled, rate_limit)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 (
                     name,
@@ -184,6 +188,7 @@ class ConfigDatabase:
                     config.get('auth_header'),
                     json.dumps(config.get('headers', {})),
                     config.get('timeout', 60),
+                    1 if config.get('use_stream', True) else 0,
                     config.get('response_format', 'openai'),
                     config.get('response_path'),
                     1 if config.get('enabled', True) else 0,

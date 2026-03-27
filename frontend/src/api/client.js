@@ -82,6 +82,7 @@ export const apiClient = {
     getAnalysisStatus: (analysisId) => api.get(`/learning/analysis/${analysisId}`),
     getWorks: () => api.get('/learning/works'),
     getWorkDetail: (analysisId) => api.get(`/learning/works/${analysisId}`),
+    deleteWork: (analysisId) => api.delete(`/learning/works/${analysisId}`),
     getReport: (projectId) => api.get(`/learning/report?project_id=${projectId}`)
   },
   
@@ -111,7 +112,30 @@ export const apiClient = {
     updateChapter: (novelId, chapterNum, data) => api.put(`/novels/${novelId}/chapters/${chapterNum}`, data),
     getCharacters: (novelId) => api.get(`/novels/${novelId}/characters`),
     addCharacter: (novelId, data) => api.post(`/novels/${novelId}/characters`, data),
-    getHooks: (novelId) => api.get(`/novels/${novelId}/hooks`)
+    getHooks: (novelId) => api.get(`/novels/${novelId}/hooks`),
+    // 重写章节
+    rewriteChapter: (novelId, chapterNum) => api.post(`/novels/${novelId}/chapters/${chapterNum}/rewrite`),
+    // 获取任务状态（统一）
+    getTask: (taskId) => api.get(`/tasks/${taskId}`),
+    // 获取队列状态
+    getQueueStatus: () => api.get('/queue/status'),
+    // 获取蓝图
+    getBlueprint: (novelId) => api.get(`/novels/${novelId}/blueprint`),
+    // 更新蓝图
+    updateBlueprint: (novelId, data) => api.put(`/novels/${novelId}/blueprint`, data),
+    // AI 润色蓝图
+    polishBlueprint: (novelId, data) => api.post(`/novels/${novelId}/blueprint/polish`, data),
+    // 续写小说
+    continueNovel: (novelId) => api.post(`/novels/${novelId}/continue`),
+    // 导出 TXT
+    exportTxt: (novelId) => `/api/novels/${novelId}/export/txt`,
+  },
+
+  // 回收站管理
+  trash: {
+    list: () => api.get('/trash'),
+    restore: (novelId) => api.post(`/trash/${novelId}/restore`),
+    permanentDelete: (novelId) => api.delete(`/trash/${novelId}`)
   },
   
   // AI 创作
@@ -126,7 +150,11 @@ export const apiClient = {
   // 全自动创作
   auto: {
     create: (data) => api.post('/auto/create', data, { timeout: 300000 }),
-    getBlueprint: (novelId) => api.get(`/auto/blueprint/${novelId}`)
+    getBlueprint: (novelId) => api.get(`/auto/blueprint/${novelId}`),
+    getCheckpoint: (title) => api.get(`/auto/checkpoint/${encodeURIComponent(title)}`),
+    deleteCheckpoint: (title) => api.delete(`/auto/checkpoint/${encodeURIComponent(title)}`),
+    getProgress: (title) => api.get(`/auto/progress/${encodeURIComponent(title)}`),
+    getProgressStream: (title) => `/api/auto/progress-stream/${encodeURIComponent(title)}`
   }
 }
 

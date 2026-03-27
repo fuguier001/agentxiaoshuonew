@@ -124,6 +124,29 @@ def get_agent_status() -> Dict[str, Dict[str, Any]]:
     return registry.get_status()
 
 
+def update_agent_status(agent_id: str, state: str, message: str = ""):
+    """更新 Agent 状态
+
+    Args:
+        agent_id: Agent ID
+        state: 状态 (idle, running, completed, error)
+        message: 状态消息
+    """
+    agent = registry.get(agent_id)
+    if agent:
+        agent.state = state
+        agent.last_active = datetime.now()
+        if hasattr(agent, 'status_message'):
+            agent.status_message = message
+        logger.info(f"Agent {agent_id} 状态更新：{state} - {message}")
+
+
+def set_all_agents_idle():
+    """将所有 Agent 设置为空闲状态"""
+    for agent_id in registry.get_all().keys():
+        update_agent_status(agent_id, "idle", "等待任务")
+
+
 def register_agent(agent: BaseAgent):
     """注册 Agent"""
     registry.register(agent)
